@@ -28,6 +28,10 @@ export class EcsCdkStack extends cdk.Stack {
       assumedBy: new iam.AccountRootPrincipal()
     });
 
+    
+    // ECR - repo
+    const ecrRepo = new ecr.Repository(this, 'EcrRepo');
+
     const cluster = new ecs.Cluster(this, "ecs-cluster", {
       vpc: vpc,
     });
@@ -64,8 +68,8 @@ export class EcsCdkStack extends cdk.Stack {
 
     taskDef.addToExecutionRolePolicy(executionRolePolicy);
 
-    const container = taskDef.addContainer('flask-app', {
-      image: ecs.ContainerImage.fromRegistry("nikunjv/flask-image:blue"),
+    const container = taskDef.addContainer('web-app', {
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepo),
       memoryLimitMiB: 256,
       cpu: 256,
       logging
@@ -95,8 +99,6 @@ export class EcsCdkStack extends cdk.Stack {
     // ***PIPELINE CONSTRUCTS***
 
 
-    // ECR - repo
-    const ecrRepo = new ecr.Repository(this, 'EcrRepo');
 
     const repository = new codecommit.Repository(this, 'MyRepo', { repositoryName: 'foo' });
 
