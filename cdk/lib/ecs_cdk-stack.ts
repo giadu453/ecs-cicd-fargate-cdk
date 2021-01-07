@@ -9,9 +9,7 @@ import targets = require('@aws-cdk/aws-events-targets');
 import codedeploy = require('@aws-cdk/aws-codedeploy');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipeline_actions = require('@aws-cdk/aws-codepipeline-actions');
-import elbv2 = require('@aws-cdk/aws-elasticloadbalancingv2');
-import dockerImg = require('@aws-cdk/aws-ecr-assets');
-import path = require('path');
+import ecs_patterns = require("@aws-cdk/aws-ecs-patterns");
 
 export class EcsCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -34,6 +32,7 @@ export class EcsCdkStack extends cdk.Stack {
 
     const cluster = new ecs.Cluster(this, "ecs-cluster", {
       vpc: vpc,
+      containerInsights: true
     });
 
     const logging = new ecs.AwsLogDriver({
@@ -47,23 +46,6 @@ export class EcsCdkStack extends cdk.Stack {
 
 
 
-     // Load balancer for the service
-    const LB = new elbv2.ApplicationLoadBalancer(this, 'LB', {
-      vpc:vpc,
-      internetFacing: true
-    });
-
-    const loadBalancerListener = LB.addListener('PublicListener', { port: 80, open: true });
-
-    loadBalancerListener.addTargetGroups('default', {
-      targetGroups: [new elbv2.ApplicationTargetGroup(this, 'default', {
-        vpc: vpc,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        port: 80
-      })]
-    });
-
-
     // ***ECS Contructs***
 
     const executionRolePolicy =  new iam.PolicyStatement({
@@ -74,6 +56,7 @@ export class EcsCdkStack extends cdk.Stack {
                 "ecr:BatchCheckLayerAvailability",
                 "ecr:GetDownloadUrlForLayer",
                 "ecr:BatchGetImage",
+                "ecs:DescribeCluster",
                 "logs:CreateLogStream",
                 "logs:PutLogEvents"
             ]
@@ -87,12 +70,10 @@ export class EcsCdkStack extends cdk.Stack {
 
     // ECR - repo
     const ecrRepo = new ecr.Repository(this, 'EcrRepo');
-    const imageAsset = new dockerImg.DockerImageAsset(this, 'imageAsset', {directory: path.join(__dirname, 'images'), repositoryName: ecrRepo.repositoryName});
-  
-    
 
     const container = taskDef.addContainer('web-app', {
-      image: ecs.ContainerImage.fromEcrRepository(ecrRepo,"lastest"),
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepo),
+      // image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
       memoryLimitMiB: 256,
       cpu: 256,
       logging
@@ -103,44 +84,19 @@ export class EcsCdkStack extends cdk.Stack {
       protocol: ecs.Protocol.TCP
     });
 
-    const fargateService = new ecs.FargateService(this, "ecs-service", {
+    const fargateService = new ecs_patterns.ApplicationLoadBalancedFargateService(this, "ecs-service", {
       cluster: cluster,
       taskDefinition: taskDef,
-      desiredCount: 2,
-      // Ensure that the rollout is able to happen in one round
-      maxHealthyPercent: 200,
-      minHealthyPercent: 100,
-
-      // No need for a public IP, we have NAT gateway in this VPC
-      assignPublicIp: false
+      publicLoadBalancer: true,
+      desiredCount: 1,
+      listenerPort: 80
     });
 
-    // const scaling = fargateService.service.autoScaleTaskCount({ maxCapacity: 3 });
-    // scaling.scaleOnCpuUtilization('CpuScaling', {
-    //   targetUtilizationPercent: 10,
-    //   scaleInCooldown: cdk.Duration.seconds(60),
-    //   scaleOutCooldown: cdk.Duration.seconds(60)
-    // });
-
-
-    loadBalancerListener.addTargets('name', {
-      port: 80,
-      pathPattern: '*',
-      priority: 1,
-
-      // Only 10 seconds for new tasks to become healthy.
-      // Increase if your application is slower to startup
-      healthCheck: {
-        healthyThresholdCount: 2,
-        interval: cdk.Duration.seconds(5),
-        timeout: cdk.Duration.seconds(2)
-      },
-
-      // Only drain containers for 10 seconds when stopping them.
-      // Increase if your app has long lived connections
-      deregistrationDelay: cdk.Duration.seconds(10),
-
-      targets: [fargateService]
+    const scaling = fargateService.service.autoScaleTaskCount({ maxCapacity: 6 });
+    scaling.scaleOnCpuUtilization('CpuScaling', {
+      targetUtilizationPercent: 10,
+      scaleInCooldown: cdk.Duration.seconds(60),
+      scaleOutCooldown: cdk.Duration.seconds(60)
     });
 
     // ***PIPELINE CONSTRUCTS***
@@ -153,11 +109,15 @@ export class EcsCdkStack extends cdk.Stack {
   // CODEBUILD - project
     const project = new codebuild.Project(this, 'MyProject', {
       projectName: `${this.stackName}`,
-      // source: gitHubSource,
       source: codebuild.Source.codeCommit({ repository }),
       environment: {
         buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_2,
         privileged: true
+      },
+      environmentVariables: {
+        'ECR_REPO_URI': {
+          value: `${ecrRepo.repositoryUri}`
+        }
       },
       buildSpec: codebuild.BuildSpec.fromObject({
         version: "0.2",
@@ -170,6 +130,10 @@ export class EcsCdkStack extends cdk.Stack {
           },
           build: {
             commands: [
+              `echo Build springbootdemo`,
+              `mvn compile -DskipTests`,
+              `mvn package -DskipTests`,
+              `echo Building the Docker image...`,
               `docker build -t $ECR_REPO_URI:$TAG .`,
               '$(aws ecr get-login --no-include-email)',
               'docker push $ECR_REPO_URI:$TAG'
@@ -178,7 +142,6 @@ export class EcsCdkStack extends cdk.Stack {
           post_build: {
             commands: [
               'echo "In Post-Build Stage"',
-              'cd ..',
               "printf '[{\"name\":\"web-app\",\"imageUri\":\"%s\"}]' $ECR_REPO_URI:$TAG > imagedefinitions.json",
               "pwd; ls -al; cat imagedefinitions.json"
             ]
@@ -216,7 +179,7 @@ export class EcsCdkStack extends cdk.Stack {
 
     const deployAction = new codepipeline_actions.EcsDeployAction({
       actionName: 'DeployAction',
-      service: fargateService,
+      service: fargateService.service,
       imageFile: new codepipeline.ArtifactPath(buildOutput, `imagedefinitions.json`)
     });
 
@@ -246,7 +209,7 @@ export class EcsCdkStack extends cdk.Stack {
     });
 
 
-    ecrRepo.grantPullPush(project.role!)
+    ecrRepo.grantPullPush(project.role!);
     project.addToRolePolicy(new iam.PolicyStatement({
       actions: [
         "ecs:DescribeCluster",
@@ -258,9 +221,10 @@ export class EcsCdkStack extends cdk.Stack {
       resources: [`${cluster.clusterArn}`],
     }));
 
+
     //OUTPUT
 
-    new cdk.CfnOutput(this, 'LoadBalancerDNS', { value: LB.loadBalancerDnsName });
+    new cdk.CfnOutput(this, 'LoadBalancerDNS', { value: fargateService.loadBalancer.loadBalancerDnsName });
     new cdk.CfnOutput(this, `codecommit-uri`, {
             exportName: 'CodeCommitURL',
             value: repository.repositoryCloneUrlHttp
