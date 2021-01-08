@@ -124,8 +124,8 @@ export class EcsCdkStack extends cdk.Stack {
         phases: {
           pre_build: {
             commands: [
-              'env',
-              'export TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION}'
+              'COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)',
+              'IMAGE_TAG=${COMMIT_HASH:=latest}'
             ]
           },
           build: {
@@ -134,15 +134,16 @@ export class EcsCdkStack extends cdk.Stack {
               `mvn compile -DskipTests`,
               `mvn package -DskipTests`,
               `echo Building the Docker image...`,
-              `docker build -t $ECR_REPO_URI:$TAG .`,
+              `docker build -t $ECR_REPO_URI:latest .`,
+              `docker tag $ECR_REPO_URI:latest $ECR_REPO_URI:$IMAGE_TAG`,
               '$(aws ecr get-login --no-include-email)',
-              'docker push $ECR_REPO_URI:$TAG'
+              'docker push $ECR_REPO_URI:latest'
             ]
           },
           post_build: {
             commands: [
               'echo "In Post-Build Stage"',
-              "printf '[{\"name\":\"web-app\",\"imageUri\":\"%s\"}]' $ECR_REPO_URI:$TAG > imagedefinitions.json",
+              "printf '[{\"name\":\"web-app\",\"imageUri\":\"%s\"}]' $ECR_REPO_URI:$IMAGE_TAG > imagedefinitions.json",
               "pwd; ls -al; cat imagedefinitions.json"
             ]
           }
