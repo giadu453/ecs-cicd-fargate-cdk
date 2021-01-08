@@ -10,12 +10,8 @@ First launch a Cloud9 terminal and prepare it with following commands:
 
 ```bash
 sudo yum install -y jq
-export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)
-export AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
-echo "export ACCOUNT_ID=${ACCOUNT_ID}" | tee -a ~/.bash_profile
-echo "export AWS_REGION=${AWS_REGION}" | tee -a ~/.bash_profile
-aws configure set default.region ${AWS_REGION}
-aws configure get default.region
+chmod -R 777 deploy.sh 
+./deploy.sh 
 ```
 Ensure the Cloud9 is assigned a role of an administrator and from Cloud9 -> AWS Settings -> Credentials -> Disable the Temporary Credentials
 
@@ -140,5 +136,3 @@ Once code commited and CodePipeline is kicked off, it will deploy the applicatio
 
 
 
-## License
-This library is licensed under the MIT-0 License. See the [LICENSE](/LICENSE) file.
