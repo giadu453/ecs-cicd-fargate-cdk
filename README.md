@@ -15,7 +15,7 @@ chmod -R 777 deploy.sh
 ./deploy.sh 
 ```
 Output:
-<img src="images/output.jpg" alt="dashboard" style="border:1px solid black">
+<img src="./images/output.jpg" alt="dashboard" style="border:1px solid black">
 
 <b>Step2. Commit source code to CodeCommit:</b>
 
@@ -30,11 +30,11 @@ git push
 ```
 
 Check your pipeline:
-<img src="images/codeBuildDone.jpg" alt="dashboard" style="border:1px solid black">
+<img src="./images/codeBuildDone.jpg" alt="dashboard" style="border:1px solid black">
 
 <b>Step3. Edit Task Definition use image ECR:</b>
 
-<img src="images/editImage.jpg" alt="dashboard" style="border:1px solid black">
+<img src="./images/editImage.jpg" alt="dashboard" style="border:1px solid black">
 
 Comment line 95 and uncomment line 94
 
