@@ -9,7 +9,6 @@ import targets = require('@aws-cdk/aws-events-targets');
 import codedeploy = require('@aws-cdk/aws-codedeploy');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipeline_actions = require('@aws-cdk/aws-codepipeline-actions');
-import ecs_patterns = require("@aws-cdk/aws-ecs-patterns");
 import elb = require("@aws-cdk/aws-elasticloadbalancingv2");
 import ats = require("@aws-cdk/aws-applicationautoscaling");
 
@@ -45,7 +44,7 @@ export class EcsCdkStack extends cdk.Stack {
     ecsFargateServiceSecurityGroup.addIngressRule(applicationLoadBalancerSecurityGroup, ec2.Port.tcp(8080));
     
 
-    // ***ECS Contructs***
+    // ECS Contructs
 
     // ECR - repo
     const ecrRepo = new ecr.Repository(this, 'ECRRepository');
@@ -146,33 +145,7 @@ const webFargateService = new ecs.FargateService(this, 'WebFargateService', {
 webFargateService.node.addDependency(httpsListener);
 webFargateService.attachToApplicationTargetGroup(webFargateServiceTargetGroup);
 
-const webServiceScaling = new ats.ScalableTarget(this, 'webFargateServiceScaling', {
-  scalableDimension: 'ecs:service:DesiredCount',
-  minCapacity: 3,
-  maxCapacity: 300,
-  serviceNamespace: ats.ServiceNamespace.ECS,
-  resourceId: `service/${cluster.clusterName}/${webFargateService.serviceName}`
-});
-
-// webServiceScaling.scaleToTrackMetric('RequestCountPerTarget', {
-//   predefinedMetric: ats.PredefinedMetric.ALB_REQUEST_COUNT_PER_TARGET,
-//   resourceLabel: `${applicationLoadBalancer.loadBalancerFullName}/${webFargateService.serviceName}`,
-//   targetValue: 4096,
-//   scaleInCooldown: cdk.Duration.minutes(5),
-//   scaleOutCooldown: cdk.Duration.minutes(5)
-// });
-
-webServiceScaling.scaleToTrackMetric('TargetResponseTime', {
-  customMetric: applicationLoadBalancer.metricTargetResponseTime(),
-  targetValue: 4,
-  scaleInCooldown: cdk.Duration.minutes(3),
-  scaleOutCooldown: cdk.Duration.minutes(3)
-});
-
-
-
-
-    // ***PIPELINE CONSTRUCTS***
+    // PIPELINE CONSTRUCTS
 
 
 
@@ -230,7 +203,7 @@ webServiceScaling.scaleToTrackMetric('TargetResponseTime', {
       })
     });
 
-    // ***PIPELINE ACTIONS***
+    // PIPELINE ACTIONS
 
     const sourceOutput = new codepipeline.Artifact();
     const buildOutput = new codepipeline.Artifact();
@@ -245,7 +218,7 @@ webServiceScaling.scaleToTrackMetric('TargetResponseTime', {
       actionName: 'CodeBuild',
       project: project,
       input: sourceOutput,
-      outputs: [buildOutput], // optional
+      outputs: [buildOutput],
     });
 
     const manualApprovalAction = new codepipeline_actions.ManualApprovalAction({
