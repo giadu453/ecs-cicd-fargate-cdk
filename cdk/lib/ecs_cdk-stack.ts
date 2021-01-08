@@ -10,7 +10,6 @@ import codedeploy = require('@aws-cdk/aws-codedeploy');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipeline_actions = require('@aws-cdk/aws-codepipeline-actions');
 import elb = require("@aws-cdk/aws-elasticloadbalancingv2");
-import ats = require("@aws-cdk/aws-applicationautoscaling");
 
 export class EcsCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -221,9 +220,9 @@ webFargateService.attachToApplicationTargetGroup(webFargateServiceTargetGroup);
       outputs: [buildOutput],
     });
 
-    const manualApprovalAction = new codepipeline_actions.ManualApprovalAction({
-      actionName: 'Approve',
-    });
+    // const manualApprovalAction = new codepipeline_actions.ManualApprovalAction({
+    //   actionName: 'Approve',
+    // });
 
     const deployAction = new codepipeline_actions.EcsDeployAction({
       actionName: 'DeployAction',
@@ -245,10 +244,10 @@ webFargateService.attachToApplicationTargetGroup(webFargateServiceTargetGroup);
           stageName: 'Build',
           actions: [buildAction],
         },
-        {
-          stageName: 'Approve',
-          actions: [manualApprovalAction],
-        },
+        // {
+        //   stageName: 'Approve',
+        //   actions: [manualApprovalAction],
+        // },
         {
           stageName: 'Deploy-to-ECS',
           actions: [deployAction],
