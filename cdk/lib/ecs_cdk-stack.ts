@@ -93,8 +93,8 @@ const webFargateTaskDefinition = new ecs.FargateTaskDefinition(this, 'WebFargate
 webFargateTaskDefinition.addToExecutionRolePolicy(executionRolePolicy);
 
 const webContainer = webFargateTaskDefinition.addContainer('WEB', {
-  // image:ecs.ContainerImage.fromEcrRepository(ecrRepo,"latest"),
-  image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
+  image:ecs.ContainerImage.fromEcrRepository(ecrRepo,"latest"),
+  // image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
   logging: ecs.LogDriver.awsLogs({
             streamPrefix: `${this.stackName}WebContainerLog`,
           })
@@ -144,6 +144,7 @@ const webFargateService = new ecs.FargateService(this, 'WebFargateService', {
   taskDefinition: webFargateTaskDefinition
 });
 webFargateService.node.addDependency(httpsListener);
+webFargateService.attachToApplicationTargetGroup(webFargateServiceTargetGroup);
 
 const webServiceScaling = new ats.ScalableTarget(this, 'webFargateServiceScaling', {
   scalableDimension: 'ecs:service:DesiredCount',
@@ -153,13 +154,13 @@ const webServiceScaling = new ats.ScalableTarget(this, 'webFargateServiceScaling
   resourceId: `service/${cluster.clusterName}/${webFargateService.serviceName}`
 });
 
-webServiceScaling.scaleToTrackMetric('RequestCountPerTarget', {
-  predefinedMetric: ats.PredefinedMetric.ALB_REQUEST_COUNT_PER_TARGET,
-  resourceLabel: `${applicationLoadBalancer.loadBalancerFullName}/${webFargateService.serviceName}`,
-  targetValue: 4096,
-  scaleInCooldown: cdk.Duration.minutes(5),
-  scaleOutCooldown: cdk.Duration.minutes(5)
-});
+// webServiceScaling.scaleToTrackMetric('RequestCountPerTarget', {
+//   predefinedMetric: ats.PredefinedMetric.ALB_REQUEST_COUNT_PER_TARGET,
+//   resourceLabel: `${applicationLoadBalancer.loadBalancerFullName}/${webFargateService.serviceName}`,
+//   targetValue: 4096,
+//   scaleInCooldown: cdk.Duration.minutes(5),
+//   scaleOutCooldown: cdk.Duration.minutes(5)
+// });
 
 webServiceScaling.scaleToTrackMetric('TargetResponseTime', {
   customMetric: applicationLoadBalancer.metricTargetResponseTime(),
@@ -216,7 +217,7 @@ webServiceScaling.scaleToTrackMetric('TargetResponseTime', {
           post_build: {
             commands: [
               'echo "In Post-Build Stage"',
-              "printf '[{\"name\":\"web-app\",\"imageUri\":\"%s\"}]' $ECR_REPO_URI:$IMAGE_TAG > imagedefinitions.json",
+              "printf '[{\"name\":\"WEB\",\"imageUri\":\"%s\"}]' $ECR_REPO_URI:$IMAGE_TAG > imagedefinitions.json",
               "pwd; ls -al; cat imagedefinitions.json"
             ]
           }
