@@ -30,6 +30,7 @@ git push
 ```
 
 Check your pipeline:
+
 <img src="./images/codeBuildDone.jpg" alt="dashboard" style="border:1px solid black">
 
 <b>Step3. Edit Task Definition use image ECR:</b>
