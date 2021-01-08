@@ -10,6 +10,8 @@ import codedeploy = require('@aws-cdk/aws-codedeploy');
 import codepipeline = require('@aws-cdk/aws-codepipeline');
 import codepipeline_actions = require('@aws-cdk/aws-codepipeline-actions');
 import ecs_patterns = require("@aws-cdk/aws-ecs-patterns");
+import elb = require("@aws-cdk/aws-elasticloadbalancingv2");
+import ats = require("@aws-cdk/aws-applicationautoscaling");
 
 export class EcsCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -18,37 +20,52 @@ export class EcsCdkStack extends cdk.Stack {
     /**
      * Create a new VPC with single NAT Gateway
      */
-    const vpc = new ec2.Vpc(this, 'ecs-cdk-vpc', {
+    const vpc = new ec2.Vpc(this, 'VPC-Demo', {
       cidr: '10.0.0.0/18',
       natGateways: 1,
       maxAzs: 2
     });
 
-    const clusterAdmin = new iam.Role(this, 'AdminRole', {
+    const clusterAdmin = new iam.Role(this, 'RoleClusterDemo', {
       assumedBy: new iam.AccountRootPrincipal()
     });
-
     
 
-    const cluster = new ecs.Cluster(this, "ecs-cluster", {
+    const cluster = new ecs.Cluster(this, "ClusterDemo", {
       vpc: vpc,
       containerInsights: true
     });
-
-    const logging = new ecs.AwsLogDriver({
-      streamPrefix: "ecs-logs"
-    });
-
-    const taskRole = new iam.Role(this, `ecs-taskRole-${this.stackName}`, {
-      roleName: `ecs-taskRole-${this.stackName}`,
-      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com')
-    });
-
-
+    
+    // Create Group Security
+    const applicationLoadBalancerSecurityGroup = new ec2.SecurityGroup(this, 'ApplicationLoadBalancerSecurityGroup', {vpc});
+    const ecsFargateServiceSecurityGroup = new ec2.SecurityGroup(this, 'EcsFargateServiceSecurityGroup', {vpc});
+    
+    // Set open port group security
+    applicationLoadBalancerSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80));
+    ecsFargateServiceSecurityGroup.addIngressRule(applicationLoadBalancerSecurityGroup, ec2.Port.tcp(8080));
+    
 
     // ***ECS Contructs***
 
-    const executionRolePolicy =  new iam.PolicyStatement({
+    // ECR - repo
+    const ecrRepo = new ecr.Repository(this, 'ECRRepository');
+
+
+const applicationLoadBalancer = new elb.ApplicationLoadBalancer(this, 'ApplicationLoadBalancer', {
+  vpc,
+  deletionProtection: false,
+  http2Enabled: true,
+  internetFacing: true,
+  securityGroup: applicationLoadBalancerSecurityGroup,
+  vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC}
+});
+const httpsListener = applicationLoadBalancer.addListener('HttpListener', {
+  port: 80,
+  protocol: elb.ApplicationProtocol.HTTP,
+  defaultAction: elb.ListenerAction.redirect({protocol: 'HTTP', port: '80'})
+});
+
+const executionRolePolicy =  new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       resources: ['*'],
       actions: [
@@ -62,52 +79,107 @@ export class EcsCdkStack extends cdk.Stack {
             ]
     });
 
-    const taskDef = new ecs.FargateTaskDefinition(this, "ecs-taskdef", {
-      taskRole: taskRole
+const taskRole = new iam.Role(this, `ecs-taskRole-${this.stackName}`, {
+      roleName: `ecs-taskRole-${this.stackName}`,
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com')
     });
 
-    taskDef.addToExecutionRolePolicy(executionRolePolicy);
+const webFargateTaskDefinition = new ecs.FargateTaskDefinition(this, 'WebFargateTaskDefinition', {
+  memoryLimitMiB: 512,
+  cpu: 256,
+  taskRole: taskRole
+});
 
-    // ECR - repo
-    const ecrRepo = new ecr.Repository(this, 'EcrRepo');
+webFargateTaskDefinition.addToExecutionRolePolicy(executionRolePolicy);
 
-    const container = taskDef.addContainer('web-app', {
-      image: ecs.ContainerImage.fromEcrRepository(ecrRepo,"latest"),
-      // image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
-      memoryLimitMiB: 256,
-      cpu: 256,
-      logging
-    });
+const webContainer = webFargateTaskDefinition.addContainer('WEB', {
+  // image:ecs.ContainerImage.fromEcrRepository(ecrRepo,"latest"),
+  image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
+  logging: ecs.LogDriver.awsLogs({
+            streamPrefix: `${this.stackName}WebContainerLog`,
+          })
+});
 
-    container.addPortMappings({
-      containerPort: 8080,
-      protocol: ecs.Protocol.TCP
-    });
+webContainer.addPortMappings({
+  hostPort: 8080,
+  containerPort: 8080,
+  protocol: ecs.Protocol.TCP
+});
 
-    const fargateService = new ecs_patterns.ApplicationLoadBalancedFargateService(this, "ecs-service", {
-      cluster: cluster,
-      taskDefinition: taskDef,
-      publicLoadBalancer: true,
-      desiredCount: 1,
-      listenerPort: 80
-    });
 
-    const scaling = fargateService.service.autoScaleTaskCount({ maxCapacity: 6 });
-    scaling.scaleOnCpuUtilization('CpuScaling', {
-      targetUtilizationPercent: 10,
-      scaleInCooldown: cdk.Duration.seconds(60),
-      scaleOutCooldown: cdk.Duration.seconds(60)
-    });
+const webFargateServiceTargetGroup = new elb.ApplicationTargetGroup(this,'WebFargateServiceTargetGroup',{
+  port: 80,
+  healthCheck:{
+    enabled: true,
+    path: "/",
+    port: '8080',
+    protocol:elb.Protocol.HTTP,
+    unhealthyThresholdCount:5,
+    timeout:cdk.Duration.seconds(45),
+    interval:cdk.Duration.seconds(60),
+    healthyHttpCodes:'200,301,302'
+  },
+  stickinessCookieDuration:cdk.Duration.seconds(604800),
+  targetType: elb.TargetType.IP,
+  vpc: vpc
+  
+});
+httpsListener.addTargetGroups('Web', {targetGroups: [webFargateServiceTargetGroup]});
+
+const webFargateService = new ecs.FargateService(this, 'WebFargateService', {
+  cluster: cluster,
+  desiredCount: 3,
+  assignPublicIp: false,
+  maxHealthyPercent: 200,
+  minHealthyPercent: 50,
+  deploymentController: {
+    type: ecs.DeploymentControllerType.ECS
+  },
+  healthCheckGracePeriod: cdk.Duration.seconds(60),
+  securityGroups: [ecsFargateServiceSecurityGroup],
+  platformVersion: ecs.FargatePlatformVersion.VERSION1_4,
+  vpcSubnets: {
+    subnetType: ec2.SubnetType.PRIVATE
+  },
+  taskDefinition: webFargateTaskDefinition
+});
+webFargateService.node.addDependency(httpsListener);
+
+const webServiceScaling = new ats.ScalableTarget(this, 'webFargateServiceScaling', {
+  scalableDimension: 'ecs:service:DesiredCount',
+  minCapacity: 3,
+  maxCapacity: 300,
+  serviceNamespace: ats.ServiceNamespace.ECS,
+  resourceId: `service/${cluster.clusterName}/${webFargateService.serviceName}`
+});
+
+webServiceScaling.scaleToTrackMetric('RequestCountPerTarget', {
+  predefinedMetric: ats.PredefinedMetric.ALB_REQUEST_COUNT_PER_TARGET,
+  resourceLabel: `${applicationLoadBalancer.loadBalancerFullName}/${webFargateService.serviceName}`,
+  targetValue: 4096,
+  scaleInCooldown: cdk.Duration.minutes(5),
+  scaleOutCooldown: cdk.Duration.minutes(5)
+});
+
+webServiceScaling.scaleToTrackMetric('TargetResponseTime', {
+  customMetric: applicationLoadBalancer.metricTargetResponseTime(),
+  targetValue: 4,
+  scaleInCooldown: cdk.Duration.minutes(3),
+  scaleOutCooldown: cdk.Duration.minutes(3)
+});
+
+
+
 
     // ***PIPELINE CONSTRUCTS***
 
 
 
-    const repository = new codecommit.Repository(this, 'MyRepo', { repositoryName: 'foo' });
+    const repository = new codecommit.Repository(this, 'CodeRepositoryDemo', { repositoryName: 'WebSpringBoot' });
 
   
   // CODEBUILD - project
-    const project = new codebuild.Project(this, 'MyProject', {
+    const project = new codebuild.Project(this, 'CodeBuildDemo', {
       projectName: `${this.stackName}`,
       source: codebuild.Source.codeCommit({ repository }),
       environment: {
@@ -181,7 +253,7 @@ export class EcsCdkStack extends cdk.Stack {
 
     const deployAction = new codepipeline_actions.EcsDeployAction({
       actionName: 'DeployAction',
-      service: fargateService.service,
+      service: webFargateService,
       imageFile: new codepipeline.ArtifactPath(buildOutput, `imagedefinitions.json`)
     });
 
@@ -189,7 +261,7 @@ export class EcsCdkStack extends cdk.Stack {
 
     // PIPELINE STAGES
 
-    new codepipeline.Pipeline(this, 'MyECSPipeline', {
+    new codepipeline.Pipeline(this, 'ECSPipeline', {
       stages: [
         {
           stageName: 'Source',
@@ -226,7 +298,7 @@ export class EcsCdkStack extends cdk.Stack {
 
     //OUTPUT
 
-    new cdk.CfnOutput(this, 'LoadBalancerDNS', { value: fargateService.loadBalancer.loadBalancerDnsName });
+    new cdk.CfnOutput(this, 'LoadBalancerDNS', { value: applicationLoadBalancer.loadBalancerDnsName });
     new cdk.CfnOutput(this, `codecommit-uri`, {
             exportName: 'CodeCommitURL',
             value: repository.repositoryCloneUrlHttp
