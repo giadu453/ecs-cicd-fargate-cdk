@@ -72,7 +72,7 @@ export class EcsCdkStack extends cdk.Stack {
     const ecrRepo = new ecr.Repository(this, 'EcrRepo');
 
     const container = taskDef.addContainer('web-app', {
-      image: ecs.ContainerImage.fromEcrRepository(ecrRepo),
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepo,"latest"),
       // image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
       memoryLimitMiB: 256,
       cpu: 256,
@@ -137,7 +137,8 @@ export class EcsCdkStack extends cdk.Stack {
               `docker build -t $ECR_REPO_URI:latest .`,
               `docker tag $ECR_REPO_URI:latest $ECR_REPO_URI:$IMAGE_TAG`,
               '$(aws ecr get-login --no-include-email)',
-              'docker push $ECR_REPO_URI:latest'
+              'docker push $ECR_REPO_URI:latest',
+              'docker push $ECR_REPO_URI:$IMAGE_TAG'
             ]
           },
           post_build: {
