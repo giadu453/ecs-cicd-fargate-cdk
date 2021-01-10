@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-import cdk = require('@aws-cdk/core');
-import { EcsCdkStack } from '../lib/ecs_cdk-stack';
+import * as cdk from '@aws-cdk/core';
+import { EcsFargateStack } from '../lib/ecs-fargate-stack';
 
 const app = new cdk.App();
 
@@ -11,4 +11,4 @@ const env = {
 };
 
 
-new EcsCdkStack(app, 'EcsCdkStack', { env });
+new EcsFargateStack(app, 'EcsFargateStack', { env });
