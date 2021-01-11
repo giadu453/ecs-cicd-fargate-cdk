@@ -107,7 +107,6 @@ export class EcsFargateStack extends cdk.Stack {
      * codelocation: "springboot" --> /springboot/*
      */
     const ecsContainer = ecsFargateTaskDefinition.addContainer('ECS-Task-SpringBoot', {
-      // image:ecs.ContainerImage.fromEcrRepository(ecrRepo,"latest"),
       image: ecs.ContainerImage.fromRegistry("amazon/amazon-ecs-sample"),
       logging: ecs.LogDriver.awsLogs({
                 streamPrefix: `${this.stackName}ECSContainerLog`,
