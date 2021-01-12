@@ -11,6 +11,7 @@ import * as codecommit           from '@aws-cdk/aws-codecommit';
 import * as codepipeline         from '@aws-cdk/aws-codepipeline';
 import * as codepipeline_actions from '@aws-cdk/aws-codepipeline-actions';
 import * as elb                  from '@aws-cdk/aws-elasticloadbalancingv2';
+import * as ats                  from '@aws-cdk/aws-applicationautoscaling';
 
 
 /**
@@ -147,7 +148,7 @@ export class EcsFargateStack extends cdk.Stack {
 
     const ecsFargateService = new ecs.FargateService(this, 'ECSFargateService', {
       cluster: cluster,
-      desiredCount: 3,
+      desiredCount: 2,
       assignPublicIp: false,
       maxHealthyPercent: 200,
       minHealthyPercent: 50,
@@ -173,6 +174,20 @@ export class EcsFargateStack extends cdk.Stack {
     //   scaleOutCooldown: cdk.Duration.seconds(60)
     // });  
 
+    const ecsFargateServiceScaling = new ats.ScalableTarget(this, 'ecsFargateServiceScaling', {
+      scalableDimension: 'ecs:service:DesiredCount',
+      minCapacity: 2,
+      maxCapacity: 12,
+      serviceNamespace: ats.ServiceNamespace.ECS,
+      resourceId: `service/${cluster.clusterName}/${ecsFargateService.serviceName}`
+    });
+
+    ecsFargateServiceScaling.scaleToTrackMetric('scaleCPU', {
+      customMetric: ecsFargateService.metricCpuUtilization(),
+      targetValue: 70,
+      scaleInCooldown: cdk.Duration.minutes(1),
+      scaleOutCooldown: cdk.Duration.minutes(3)
+    });
 
     /**
      * 4. PIPELINE CONSTRUCTS
