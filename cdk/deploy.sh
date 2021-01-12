@@ -3,11 +3,13 @@ sudo yum install -y jq
 echo "==============SET ACCOUNT_ID and AWS_REGION================"
 export ACCOUNT_ID=$(aws sts get-caller-identity --output text --query Account)
 export AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+echo "export ACCOUNT_ID=${ACCOUNT_ID}"
+echo "export AWS_REGION=${AWS_REGION}"
 
 echo "=============SHOW ACCOUNT_ID and AWS_REGION================"
 
-echo "export ACCOUNT_ID=${ACCOUNT_ID}"
-echo "export AWS_REGION=${AWS_REGION}"
+echo "ACCOUNT_ID=${ACCOUNT_ID}"
+echo "AWS_REGION=${AWS_REGION}"
 aws configure set default.region ${AWS_REGION}
 aws configure get default.region
 
@@ -16,5 +18,4 @@ cdk bootstrap aws://$ACCOUNT_ID/$AWS_REGION
 
 
 echo "==================RUN cdk deploy==========================="
-
 cdk deploy

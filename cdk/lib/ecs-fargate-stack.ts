@@ -12,6 +12,7 @@ import * as codepipeline         from '@aws-cdk/aws-codepipeline';
 import * as codepipeline_actions from '@aws-cdk/aws-codepipeline-actions';
 import * as elb                  from '@aws-cdk/aws-elasticloadbalancingv2';
 import * as ats                  from '@aws-cdk/aws-applicationautoscaling';
+import * as dotenv               from "dotenv";
 
 
 /**
@@ -20,7 +21,8 @@ import * as ats                  from '@aws-cdk/aws-applicationautoscaling';
 export class EcsFargateStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
-
+    
+    dotenv.config();
     // The code that defines your stack goes here
     /**
      * 1. Create a new VPC with NO NAT Gateway --> reduce cost!
@@ -240,7 +242,7 @@ export class EcsFargateStack extends cdk.Stack {
           },
           build: {
             commands: [
-              'echo cd docker/$ECR_REPO_URI',
+              // 'echo cd docker/$ECR_REPO_URI',
               `echo Build $ECR_REPO_URI`,
               `mvn compile -DskipTests`,
               `mvn package -DskipTests`,
